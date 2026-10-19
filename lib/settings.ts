@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { type Filter, parseFilter } from "./prefs";
+import { writeJsonFileAtomic } from "./atomic";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // APP SETTINGS (server-side, durable)
@@ -73,9 +74,10 @@ export async function getSettings(): Promise<Settings> {
   };
 }
 
-/** Overwrite the settings file with a fully-formed (normalized) Settings. */
+/** Overwrite the settings file with a fully-formed (normalized) Settings.
+ *  Written atomically (temp + rename) so a crash mid-write can't truncate it. */
 export async function saveSettings(settings: Settings): Promise<void> {
-  await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2) + "\n", "utf-8");
+  await writeJsonFileAtomic(SETTINGS_FILE, settings);
 }
 
 /**

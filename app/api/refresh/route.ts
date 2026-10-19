@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { Catalog } from "@/lib/contracts";
-import { getLibrary, mergeHarvest, saveLibrary } from "@/lib/catalog";
+import { getLibrary, mergeHarvest, saveLibrary, withLibraryLock } from "@/lib/catalog";
 import { getSettings } from "@/lib/settings";
 import { cdpResolver } from "@/lib/resolvers/cdp";
 
@@ -20,10 +20,12 @@ import { cdpResolver } from "@/lib/resolvers/cdp";
  * scan) and unioned in, so reels from channels we didn't refresh are untouched.
  * Harvesting is sequential: it drives one shared browser, and parallel CDP tabs
  * would contend. A per-channel failure is reported but doesn't abort the rest.
+ *
+ * The whole read-harvest-merge-save runs under withLibraryLock so it can't race a
+ * concurrent refresh/add/remove (which would read the same starting library and
+ * clobber each other's save) — the lock also serializes the shared browser.
  */
 export async function POST(req: Request) {
-  const library = await getLibrary();
-
   let body: { channel?: string; channels?: string[] } = {};
   try {
     body = (await req.json()) ?? {};
@@ -31,73 +33,79 @@ export async function POST(req: Request) {
     /* empty body is fine → refresh all */
   }
 
-  // Resolve which channels to refresh: explicit list, single, or all on file.
-  let targets = body.channels ?? (body.channel ? [body.channel] : null);
-  if (!targets) targets = library.channels.map((c) => c.handle);
-  targets = [...new Set(targets.filter(Boolean))];
+  const outcome = await withLibraryLock(async () => {
+    const library = await getLibrary();
 
-  if (targets.length === 0) {
-    return NextResponse.json(
-      { ok: false, error: "No channels to refresh. Add a channel first." },
-      { status: 400 }
-    );
-  }
+    // Resolve which channels to refresh: explicit list, single, or all on file.
+    let targets = body.channels ?? (body.channel ? [body.channel] : null);
+    if (!targets) targets = library.channels.map((c) => c.handle);
+    targets = [...new Set(targets.filter(Boolean))];
 
-  // One harvest cap for every channel (data/settings.json). Bounds a big backfill:
-  // a channel that posted a lot since last refresh pulls at most `refreshLimit`
-  // newest reels instead of the whole gap.
-  const { refreshLimit } = await getSettings();
+    if (targets.length === 0) {
+      return {
+        status: 400,
+        json: { ok: false, error: "No channels to refresh. Add a channel first." },
+      };
+    }
 
-  // Thread the library through each harvest so sequential merges accumulate.
-  let current = library;
-  const results: Array<{ channel: string; added: number; total: number; error?: string }> = [];
+    // One harvest cap for every channel (data/settings.json). Bounds a big
+    // backfill: a channel that posted a lot since last refresh pulls at most
+    // `refreshLimit` newest reels instead of the whole gap.
+    const { refreshLimit } = await getSettings();
 
-  for (const handle of targets) {
-    const known = new Set(
-      current.reels.filter((r) => r.channel === handle).map((r) => r.shortcode)
-    );
-    try {
-      const harvest: Catalog = await cdpResolver.listChannel(handle, known, refreshLimit);
-      if (harvest.reels.length === 0 && known.size === 0) {
-        // First-ever harvest returning nothing → likely not loaded / not logged in.
+    // Thread the library through each harvest so sequential merges accumulate.
+    let current = library;
+    const results: Array<{ channel: string; added: number; total: number; error?: string }> = [];
+
+    for (const handle of targets) {
+      const known = new Set(
+        current.reels.filter((r) => r.channel === handle).map((r) => r.shortcode)
+      );
+      try {
+        const harvest: Catalog = await cdpResolver.listChannel(handle, known, refreshLimit);
+        if (harvest.reels.length === 0 && known.size === 0) {
+          // First-ever harvest returning nothing → likely not loaded / not logged in.
+          results.push({
+            channel: handle,
+            added: 0,
+            total: 0,
+            error: "Harvested 0 reels — profile may not have loaded or isn't logged in.",
+          });
+          continue;
+        }
+        const merged = mergeHarvest(current, harvest);
+        current = merged.library;
+        const total = current.reels.filter((r) => r.channel === handle).length;
+        results.push({ channel: handle, added: merged.added, total });
+      } catch (err) {
         results.push({
           channel: handle,
           added: 0,
-          total: 0,
-          error: "Harvested 0 reels — profile may not have loaded or isn't logged in.",
+          total: current.reels.filter((r) => r.channel === handle).length,
+          error:
+            "Couldn't reach the browser. Make sure it's open, signed in to Instagram, and exposing the CDP port. " +
+            (err instanceof Error ? err.message : String(err)),
         });
-        continue;
       }
-      const merged = mergeHarvest(current, harvest);
-      current = merged.library;
-      const total = current.reels.filter((r) => r.channel === handle).length;
-      results.push({ channel: handle, added: merged.added, total });
-    } catch (err) {
-      results.push({
-        channel: handle,
-        added: 0,
-        total: current.reels.filter((r) => r.channel === handle).length,
-        error:
-          "Couldn't reach the browser. Make sure it's open, signed in to Instagram, and exposing the CDP port. " +
-          (err instanceof Error ? err.message : String(err)),
-      });
     }
-  }
 
-  const anySucceeded = results.some((r) => !r.error);
-  if (anySucceeded) await saveLibrary(current);
+    const anySucceeded = results.some((r) => !r.error);
+    if (anySucceeded) await saveLibrary(current);
 
-  const added = results.reduce((n, r) => n + r.added, 0);
-  const total = current.reels.length;
+    const added = results.reduce((n, r) => n + r.added, 0);
+    const total = current.reels.length;
 
-  // If every requested channel failed, surface it as an error (502) so the UI can
-  // show the reason rather than a misleading "up to date".
-  if (!anySucceeded) {
-    return NextResponse.json(
-      { ok: false, error: results[0]?.error ?? "Refresh failed.", results },
-      { status: 502 }
-    );
-  }
+    // If every requested channel failed, surface it as an error (502) so the UI
+    // can show the reason rather than a misleading "up to date".
+    if (!anySucceeded) {
+      return {
+        status: 502,
+        json: { ok: false, error: results[0]?.error ?? "Refresh failed.", results },
+      };
+    }
 
-  return NextResponse.json({ ok: true, added, total, results });
+    return { status: 200, json: { ok: true, added, total, results } };
+  });
+
+  return NextResponse.json(outcome.json, { status: outcome.status });
 }

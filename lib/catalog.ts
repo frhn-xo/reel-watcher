@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import type { Catalog, Channel, Library, Reel, ResolvedVideo } from "./contracts";
+import { writeJsonFileAtomic } from "./atomic";
 
 // Re-exported so existing imports (`@/lib/catalog`'s ResolvedVideo) keep working;
 // the canonical definition lives in the port layer (contracts.ts).
@@ -93,9 +94,40 @@ export async function getLibrary(): Promise<Library> {
 }
 
 /** Overwrite the library file. Reels are stored in whatever order they arrive;
- *  getLibrary() is the single place that imposes chronological order on read. */
+ *  getLibrary() is the single place that imposes chronological order on read.
+ *  Written atomically (temp + rename) so a crash mid-write can't truncate it. */
 export async function saveLibrary(library: Library): Promise<void> {
-  await fs.writeFile(DATA_FILE, JSON.stringify(library, null, 2) + "\n", "utf-8");
+  await writeJsonFileAtomic(DATA_FILE, library);
+}
+
+// ─── Serialized library mutations ────────────────────────────────────────────
+// A library write is a read-modify-write over the WHOLE file (read everything,
+// change a bit, write everything back), and the harvest that feeds it drives the
+// ONE shared browser. Both facts demand these operations run strictly one at a
+// time. Without it, two overlapping operations each read the same starting
+// library and the second save clobbers the first's change — a silent lost update
+// (e.g. "add channel" vanishing because a concurrent refresh wrote a snapshot
+// that predated it) — and two harvests would also fight over the same browser
+// tabs.
+//
+// A single in-process promise-chain lock serializes them in arrival order (the
+// same pattern used for the resolved-video store below, generalized). Pure reads
+// (getLibrary) deliberately do NOT take the lock: the atomic write above means a
+// reader always sees a complete file, so the grid and player stay responsive
+// while a harvest runs — only writers queue, and only against each other.
+//
+// In-process only: this is one lock per Node process, which is exactly right for
+// a single-user local app. A multi-process deployment against the same data dir
+// would need a file lock or a database instead.
+let libraryLock: Promise<unknown> = Promise.resolve();
+
+/** Run `fn` with exclusive access to the library (refresh / add / remove all
+ *  share this lock). Each caller still awaits — and sees the error of — its own
+ *  run; a failed run doesn't poison the chain for the next waiter. */
+export function withLibraryLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = libraryLock.then(fn);
+  libraryLock = run.catch(() => {});
+  return run;
 }
 
 export async function getReelByShortcode(shortcode: string): Promise<Reel | null> {
@@ -202,7 +234,7 @@ export function upsertResolvedVideo(
     const store = await getResolvedStore();
     store.videos[shortcode] = video;
     store.resolvedAt = new Date().toISOString();
-    await fs.writeFile(RESOLVED_FILE, JSON.stringify(store, null, 2) + "\n", "utf-8");
+    await writeJsonFileAtomic(RESOLVED_FILE, store);
   });
   writeTail = run.catch(() => {});
   return run;
