@@ -3,6 +3,7 @@ import { getLibrary } from "@/lib/catalog";
 import { getSettings, MIN_REFRESH_LIMIT, MAX_REFRESH_LIMIT } from "@/lib/settings";
 import SettingsPanel, { type ChannelRow } from "./SettingsPanel";
 import ConnectionStatus from "./ConnectionStatus";
+import BackupControls from "./BackupControls";
 import BackToGrid from "./BackToGrid";
 
 // App settings live here, off the main screen: configuration and channel
@@ -49,6 +50,7 @@ async function SettingsLoader() {
         minLimit={MIN_REFRESH_LIMIT}
         maxLimit={MAX_REFRESH_LIMIT}
       />
+      <BackupControls />
     </div>
   );
 }

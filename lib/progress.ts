@@ -143,6 +143,44 @@ export function shouldResume(entry: WatchEntry | null | undefined): boolean {
   return true;
 }
 
+// ─── Backup (export / restore the whole store) ───────────────────────────────
+// Watch history is the client half of a backup bundle (the library + settings
+// live server-side — see lib/backup.ts). These two functions are the only door
+// in/out of the whole store, so the localStorage key stays owned by this module.
+
+/** The entire watch-history store — for inclusion in an exported backup. */
+export function exportWatchHistory(): Store {
+  return read();
+}
+
+/**
+ * Replace the entire watch-history store from a backup bundle. Each entry is
+ * coerced to a valid shape and anything malformed is dropped, so a hand-edited or
+ * foreign file can't poison the store. The write fires the update event, so any
+ * open grid/player reflects the restored progress immediately.
+ */
+export function importWatchHistory(raw: unknown): void {
+  if (!raw || typeof raw !== "object") return;
+  const next: Store = {};
+  for (const [shortcode, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!shortcode || !value || typeof value !== "object") continue;
+    const v = value as Record<string, unknown>;
+    const position = Number(v.position);
+    const duration = Number(v.duration);
+    const updatedAt = Number(v.updatedAt);
+    const rotation = Number(v.rotation);
+    next[shortcode] = {
+      position: Number.isFinite(position) && position >= 0 ? position : 0,
+      duration: Number.isFinite(duration) && duration >= 0 ? duration : 0,
+      completed: v.completed === true,
+      rotation:
+        rotation === 90 || rotation === 180 || rotation === 270 ? rotation : 0,
+      updatedAt: Number.isFinite(updatedAt) ? updatedAt : 0,
+    };
+  }
+  write(next);
+}
+
 /**
  * React hook: the live watch-history map. Re-reads on write (this tab), on
  * cross-tab storage events, and when the window/tab regains focus — so returning

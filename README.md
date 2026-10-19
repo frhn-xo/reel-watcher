@@ -28,6 +28,7 @@ suggestions, no algorithm — just the reels you asked for.
 - **Continue watching.** A dedicated row brings you straight back to whatever you haven't finished.
 - **Seen and fresh at a glance.** Watched reels are marked and filterable, so you always know what's new and what you've already seen.
 - **One-tap refresh.** Pull a channel's newest reels on demand — fetched incrementally, so only new reels are added, not the whole back-catalog.
+- **Export and import.** One click saves your channels, reels, settings, and watch history to a single JSON file; import restores them on another machine or after a reset.
 - **Fully local and private.** Your catalog is a JSON file on your own disk. No account to create, no server to run, no telemetry.
 
 ## How it's built
