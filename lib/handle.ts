@@ -17,10 +17,14 @@ export function parseHandle(input: string): string | null {
     s = m ? m[1] : "";
   }
 
-  s = s.replace(/^@+/, "").replace(/[/?#].*$/, "").trim();
+  // Instagram handles are case-insensitive and canonically lowercase, so we
+  // normalize to lowercase here. Without this, "NatGeo" and "natgeo" would be
+  // treated as two different channels for the same account (the library dedups
+  // channels by exact handle) — you'd get a duplicate and a redundant harvest.
+  s = s.replace(/^@+/, "").replace(/[/?#].*$/, "").trim().toLowerCase();
 
-  if (!s || RESERVED.has(s.toLowerCase())) return null;
+  if (!s || RESERVED.has(s)) return null;
   // IG handles: letters, digits, periods, underscores.
-  if (!/^[A-Za-z0-9._]{1,30}$/.test(s)) return null;
+  if (!/^[a-z0-9._]{1,30}$/.test(s)) return null;
   return s;
 }
