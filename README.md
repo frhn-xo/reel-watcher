@@ -4,7 +4,7 @@
 
 # Reel Watcher
 
-**A calm, self-hosted way to watch any Instagram channel's reels — the videos, without the feed.**
+**Built for myself lol, don't judge me.**
 
 Point it at a channel. It pulls that channel's reels into a quiet tile grid and plays
 them back in a real video player with proper scrubbing. No infinite scroll, no
