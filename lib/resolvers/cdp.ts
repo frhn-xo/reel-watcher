@@ -104,6 +104,16 @@ class CDPSession {
     this.ws.close();
   }
 
+  /** Read the browser's cookies (all contexts). A browser-level command — needs
+   *  no attached tab — so a health check can see the httpOnly instagram session
+   *  cookie (invisible to in-page JS) without opening or loading any page. */
+  async getCookies(): Promise<Array<{ name: string; value: string; domain: string }>> {
+    const res = await this.call<{
+      cookies?: Array<{ name: string; value: string; domain: string }>;
+    }>("Storage.getCookies");
+    return res?.cookies ?? [];
+  }
+
   /** Evaluate an expression in the attached tab and return its value. */
   async evaluate<T>(expression: string, awaitPromise = false): Promise<T> {
     const res = await this.call<{
@@ -458,6 +468,44 @@ async function listChannelViaCdp(
   } finally {
     if (gridTab) await cdp.closeTab(gridTab).catch(() => {});
     if (reelsTab) await cdp.closeTab(reelsTab).catch(() => {});
+    cdp.close();
+  }
+}
+
+// ─── Connection health ───────────────────────────────────────────────────────
+// A cheap preflight for the Settings screen (see app/api/health). "Reachable" =
+// the CDP debug port answered and a browser websocket opened. "Logged in" = the
+// browser holds an instagram.com `sessionid` cookie. We read cookies at the
+// browser level, so this never opens a tab or loads instagram.com — it's fast and
+// has no side effects on the user's windows.
+
+export interface CdpHealth {
+  reachable: boolean; // CDP debug port answered and we attached
+  loggedIn: boolean; // an instagram.com session cookie is present
+  endpoint: string; // where we looked, e.g. "127.0.0.1:9222"
+  error?: string; // why a check failed, when it did
+}
+
+export async function checkCdpHealth(): Promise<CdpHealth> {
+  const endpoint = CDP_HOST;
+  const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+  let cdp: CDPSession;
+  try {
+    cdp = await CDPSession.connect();
+  } catch (e) {
+    return { reachable: false, loggedIn: false, endpoint, error: errMsg(e) };
+  }
+  try {
+    const cookies = await cdp.getCookies();
+    const loggedIn = cookies.some(
+      (c) => c.domain.includes("instagram.com") && c.name === "sessionid" && !!c.value
+    );
+    return { reachable: true, loggedIn, endpoint };
+  } catch (e) {
+    // Reachable (we attached) but couldn't read cookies — report it honestly.
+    return { reachable: true, loggedIn: false, endpoint, error: errMsg(e) };
+  } finally {
     cdp.close();
   }
 }

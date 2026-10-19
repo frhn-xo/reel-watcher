@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { getLibrary } from "@/lib/catalog";
 import { getSettings, MIN_REFRESH_LIMIT, MAX_REFRESH_LIMIT } from "@/lib/settings";
 import SettingsPanel, { type ChannelRow } from "./SettingsPanel";
+import ConnectionStatus from "./ConnectionStatus";
 import BackToGrid from "./BackToGrid";
 
 // App settings live here, off the main screen: configuration and channel
@@ -41,6 +42,7 @@ async function SettingsLoader() {
   }));
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
+      <ConnectionStatus />
       <SettingsPanel
         channels={rows}
         refreshLimit={settings.refreshLimit}

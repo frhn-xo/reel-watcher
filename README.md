@@ -111,6 +111,24 @@ point at a different host or port, create a `.env.local` file:
 CDP_ENDPOINT=127.0.0.1:9222
 ```
 
+## Security
+
+Reel Watcher drives your **signed-in** Instagram browser. Anything that can reach
+the app's port can use that session — harvest any profile and stream media **as
+you** — with no login of its own. Treat the running app as if it were your
+Instagram account.
+
+- **Keep it on localhost.** `npm run dev` and `npm run start` bind to `127.0.0.1`
+  only, so the app is reachable from your own machine and nothing else. That's the
+  default; keep it.
+- **Don't expose it.** There is no authentication. Do not bind it to `0.0.0.0`,
+  put it behind a public reverse proxy, or forward its port — doing so hands your
+  Instagram session to anyone who can reach it. If you override the host to a
+  non-loopback address, the app prints a warning on startup.
+- **The debug browser is a control channel too.** Chromium's
+  `--remote-debugging-port` is itself unauthenticated — anything that reaches it
+  can drive the browser. Keep that port on localhost as well.
+
 ## Legal
 
 This is a personal tool for watching reels you already have access to. It automates your own
