@@ -2,9 +2,10 @@
 
 /* Reel Watcher is a dark-only viewing app — see DESIGN.md §4. There is no light
    theme; bright chrome fights the content. Surfaces/ink use Tailwind's neutral
-   scale directly (documented in DESIGN.md); only the two *meaningful* colors —
-   accent (playback) and seen (finished) — are tokenized here, so there is one
-   source of truth for them and they generate bg-/text-/ring- utilities. */
+   scale directly (documented in DESIGN.md); only the three *meaningful* colors —
+   accent (playback), seen (finished), and live (on/active) — are tokenized here,
+   so there is one source of truth for them and they generate bg-/text-/ring-
+   utilities. */
 :root {
   --background: #0a0a0a; /* neutral-950 */
   --foreground: #fafafa; /* neutral-50  */
@@ -16,10 +17,11 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  /* The only two chromatic colors in the system. Each means exactly one thing. */
+  /* The only three chromatic colors in the system. Each means exactly one thing. */
   --color-accent: #dc2626; /* red-600   — playback: progress, scrubber, resume, focus */
   --color-accent-hover: #ef4444; /* red-500 */
-  --color-seen: #34d399; /* emerald-400 — finished / seen */
+  --color-seen: #34d399; /* emerald-400 — finished / seen (a content state) */
+  --color-live: #22c55e; /* green-500 — live / active: on, connected, running (a status) */
 }
 
 body {

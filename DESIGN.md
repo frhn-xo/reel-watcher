@@ -74,7 +74,7 @@ the only saturated things in the grid.
 **Dark-only.** This is a viewing app; a bright chrome fights the content. There is
 no light theme and we don't pretend to support one.
 
-Chromatic color is a scarce resource. The palette is **neutrals + exactly two
+Chromatic color is a scarce resource. The palette is **neutrals + exactly three
 meaningful colors.**
 
 ### Surfaces (background → foreground)
@@ -93,21 +93,30 @@ meaningful colors.**
 | ink-muted | `neutral-400` | secondary text, metadata |
 | ink-faint | `neutral-500` | tertiary, disabled, counts |
 
-### The two meaningful colors (tokens in `globals.css`)
+### The three meaningful colors (tokens in `globals.css`)
 | Token | Utility | Hex | Means — and ONLY this |
 |---|---|---|---|
 | accent | `bg-accent` `text-accent` `ring-accent` | `#dc2626` (red-600) | **playback**: progress bars, scrubber, resume. Also the focus ring. Nothing decorative. |
 | accent-hover | — | `#ef4444` (red-500) | hover of accent surfaces |
-| seen | `text-seen` | `#34d399` (emerald-400) | **finished/seen** status. Nothing else is ever emerald. |
+| seen | `text-seen` | `#34d399` (emerald-400) | **finished/seen** — a *content* state (a reel you've watched). Nothing else is ever emerald. |
+| live | `bg-live` `text-live` `ring-live` | `#22c55e` (green-500) | **live / active** — a *status*: a thing is on, connected, or running (e.g. the connection indicator). Any future "it's on/healthy" signal reuses this, not a new color. |
+
+**Two greens, two domains.** `seen` (emerald, content-completion on tiles) and
+`live` (green, system/activity status) are deliberately distinct hues and never
+share a surface — seen lives on reel tiles, live lives in chrome like Settings. If
+you ever feel tempted to use one for the other's job, you've found the seam: they
+mean different things.
 
 **Selected ≠ accent.** A selected UI control (active filter pill) uses an *inverse*
 fill — `bg-white text-neutral-900` — not red. Rationale: red is reserved for
 playback, so "which thing is selected" and "where the video is" never get confused.
 These are two distinct meanings and must stay visually distinct.
 
-**Rule:** if you're about to introduce a third chromatic color, don't. Solve it
-with a neutral + one of the two levers above. If it genuinely can't be solved,
-that's a new rule — add the token here with its one meaning, then use it.
+**Rule:** if you're about to introduce a *fourth* chromatic color, don't. Solve it
+with a neutral + one of the levers above, or reuse one of the three if the meaning
+genuinely matches (e.g. a new "it's on/healthy" signal is `live`, not a new color).
+If it truly can't be solved, that's a new rule — add the token here with its one
+meaning, then use it everywhere that meaning appears.
 
 ---
 

@@ -7,10 +7,11 @@ import { useEffect, useState } from "react";
 // Today you only find out by adding a channel and getting a cryptic error — so we
 // check /api/health up front and say plainly what's wrong and how to fix it.
 //
-// On-system color: this app reserves red for playback and emerald for "seen"
-// (DESIGN.md §4), so a status light can't use either. We signal with NEUTRALS +
-// the contrast/weight levers instead — an all-good state stays calm and quiet; a
-// problem state gets brighter ink, heavier weight, and remediation steps.
+// On-system color: DESIGN.md §4 has a `live` green (green-500) meaning "on /
+// connected / running" — this indicator is its home. Green dot = connected; a
+// neutral dot = not (dim while the check is in flight). Problem states still carry
+// the load in TEXT — brighter ink, heavier weight, and remediation steps — so the
+// color is an at-a-glance summary, not the only signal.
 
 interface Health {
   reachable: boolean; // the CDP debug port answered
@@ -83,14 +84,15 @@ export default function ConnectionStatus() {
   );
 }
 
-// A calm, filled dot when all is well; a brighter hollow ring when something
-// needs attention; a faint dot while the check is in flight. No chromatic color.
+// Green (`live`) when the connection is up; a neutral dot otherwise — faint while
+// the check is in flight, a visible gray when something's wrong. The problem
+// detail + steps in Body carry the attention; the dot is the at-a-glance summary.
 function Indicator({ calm, dim }: { calm: boolean; dim: boolean }) {
   const cls = dim
-    ? "bg-neutral-700"
+    ? "bg-neutral-700" // check in flight
     : calm
-      ? "bg-neutral-400"
-      : "bg-transparent ring-2 ring-white/70";
+      ? "bg-live" // connected / live
+      : "bg-neutral-500"; // not connected
   return <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${cls}`} aria-hidden />;
 }
 
