@@ -8,7 +8,7 @@ import {
   upsertChannel,
   withLibraryLock,
 } from "@/lib/catalog";
-import { getSettings } from "@/lib/settings";
+import { getSettings, clampRefreshLimit } from "@/lib/settings";
 import { cdpResolver } from "@/lib/resolvers/cdp";
 import { parseHandle } from "@/lib/handle";
 
@@ -16,12 +16,14 @@ import { parseHandle } from "@/lib/handle";
 // over CDP, so it runs on the Node runtime (the default for route handlers).
 
 /**
- * Add a channel. Body: { input: "<handle | @handle | profile URL>" }.
+ * Add a channel. Body: { input: "<handle | @handle | profile URL>", limit?: number }.
  * Registers the channel, then harvests (no known set) so its reels show up
  * immediately — add is a one-step action, not "add then separately refresh". The
- * harvest is capped at the configured refresh limit (data/settings.json): a brand-
- * new channel can have thousands of reels, so a first add pulls the newest N, not
- * the entire back-catalog.
+ * harvest is capped at `limit` when the caller provides one (clamped to the valid
+ * range), else the configured refresh limit (data/settings.json): a brand-new
+ * channel can have thousands of reels, so a first add pulls the newest N, not the
+ * entire back-catalog. The per-add limit lets a new channel pull more (or fewer)
+ * on its first harvest than a routine refresh does, without touching the setting.
  *
  * Runs under withLibraryLock so the read-harvest-merge-save can't race a
  * concurrent refresh/remove (and so it doesn't drive the shared browser while
@@ -29,8 +31,11 @@ import { parseHandle } from "@/lib/handle";
  */
 export async function POST(req: Request) {
   let input: string | undefined;
+  let rawLimit: unknown;
   try {
-    input = (await req.json())?.input;
+    const body = await req.json();
+    input = body?.input;
+    rawLimit = body?.limit;
   } catch {
     /* fall through to validation */
   }
@@ -65,8 +70,14 @@ export async function POST(req: Request) {
     };
 
     try {
+      // A per-add limit (optional) overrides the setting for this first harvest
+      // only; when omitted, fall back to the configured refresh limit.
       const { refreshLimit } = await getSettings();
-      const harvest: Catalog = await cdpResolver.listChannel(handle, undefined, refreshLimit);
+      const limit =
+        rawLimit === undefined || rawLimit === null || rawLimit === ""
+          ? refreshLimit
+          : clampRefreshLimit(rawLimit);
+      const harvest: Catalog = await cdpResolver.listChannel(handle, undefined, limit);
       if (harvest.reels.length === 0) {
         return {
           status: 502,

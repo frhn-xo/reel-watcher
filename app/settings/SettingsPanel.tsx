@@ -30,6 +30,17 @@ export default function SettingsPanel({
   const [addNote, setAddNote] = useState<string | null>(null);
   const [addError, setAddError] = useState(false);
 
+  // Optional per-add fetch count: how many reels THIS new channel pulls on its
+  // first harvest. Blank = use the configured refresh limit. Independent of the
+  // Refresh button, which always uses the saved limit.
+  const [addLimit, setAddLimit] = useState("");
+  const addLimitNum = Number(addLimit);
+  const addLimitValid =
+    addLimit === "" ||
+    (Number.isInteger(addLimitNum) &&
+      addLimitNum >= minLimit &&
+      addLimitNum <= maxLimit);
+
   // Refresh limit — how many reels a single harvest (refresh or add) pulls at most.
   const [limit, setLimit] = useState(String(refreshLimit));
   const [savingLimit, setSavingLimit] = useState(false);
@@ -76,7 +87,7 @@ export default function SettingsPanel({
   const parsed = parseHandle(input);
 
   async function add() {
-    if (!parsed || adding) return;
+    if (!parsed || !addLimitValid || adding) return;
     setAdding(true);
     setAddNote(null);
     setAddError(false);
@@ -84,7 +95,10 @@ export default function SettingsPanel({
       const res = await fetch("/api/channels", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ input }),
+        body: JSON.stringify({
+          input,
+          ...(addLimit === "" ? {} : { limit: addLimitNum }),
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -94,6 +108,7 @@ export default function SettingsPanel({
       }
       setAddNote(`Added @${data.channel} · ${data.added} reels`);
       setInput("");
+      setAddLimit("");
       startTransition(() => router.refresh());
     } catch (err) {
       setAddError(true);
@@ -179,14 +194,32 @@ export default function SettingsPanel({
             autoCapitalize="none"
             className="min-w-0 flex-1 rounded-full border border-white/15 bg-neutral-900 px-4 py-2 text-sm text-neutral-100 placeholder:text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
           />
+          <input
+            type="number"
+            inputMode="numeric"
+            min={minLimit}
+            max={maxLimit}
+            value={addLimit}
+            onChange={(e) => setAddLimit(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
+            placeholder={String(refreshLimit)}
+            aria-label="Reels to fetch on this first harvest"
+            title={`How many reels to fetch now — leave blank for the default (${refreshLimit}). ${minLimit}–${maxLimit}.`}
+            className={`w-24 shrink-0 rounded-full border bg-neutral-900 px-4 py-2 text-sm tabular-nums text-neutral-100 placeholder:text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950 ${addLimitValid ? "border-white/15" : "border-accent"}`}
+          />
           <button
             onClick={add}
-            disabled={!parsed || adding}
+            disabled={!parsed || !addLimitValid || adding}
             className="shrink-0 rounded-full bg-white px-5 py-2 text-sm font-medium text-neutral-900 transition hover:bg-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {adding ? "Adding…" : "Add"}
           </button>
         </div>
+        <p className="mt-2 text-xs text-neutral-500">
+          The number is how many reels to fetch on this first harvest, newest
+          first — leave it blank to use the refresh limit ({refreshLimit}).{" "}
+          {minLimit}–{maxLimit}.
+        </p>
         {addNote && (
           <p className={`mt-2 text-xs ${addError ? "text-accent" : "text-neutral-400"}`}>
             {addNote}
