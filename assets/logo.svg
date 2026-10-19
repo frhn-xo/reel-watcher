@@ -1,0 +1,15 @@
+<svg width="96" height="96" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Reel Watcher">
+  <style>
+    .ln { stroke: #171717; stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+    @media (prefers-color-scheme: dark) { .ln { stroke: #ededed; } }
+  </style>
+  <path class="ln" d="M5 32C16 19 48 19 59 32C48 45 16 45 5 32Z" />
+  <circle class="ln" cx="32" cy="32" r="8.5" />
+  <circle cx="32" cy="32" r="3.4" fill="#dc2626" />
+  <path class="ln" d="M32 15V7" />
+  <path class="ln" d="M19 18L14 10" />
+  <path class="ln" d="M45 18L50 10" />
+  <path class="ln" d="M32 49V57" />
+  <path class="ln" d="M19 46L14 54" />
+  <path class="ln" d="M45 46L50 54" />
+</svg>

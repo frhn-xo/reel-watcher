@@ -1,0 +1,19 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .ln { stroke: #171717; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+    .pupil { fill: #171717; }
+    @media (prefers-color-scheme: dark) {
+      .ln { stroke: #ededed; }
+      .pupil { fill: #ededed; }
+    }
+  </style>
+  <path class="ln" d="M6 32C16 20 48 20 58 32C48 44 16 44 6 32Z" />
+  <circle class="ln" cx="32" cy="32" r="9" />
+  <circle class="pupil" cx="32" cy="32" r="3.5" />
+  <path class="ln" d="M32 16V8" />
+  <path class="ln" d="M18 19L13 11" />
+  <path class="ln" d="M46 19L51 11" />
+  <path class="ln" d="M32 48V56" />
+  <path class="ln" d="M18 45L13 53" />
+  <path class="ln" d="M46 45L51 53" />
+</svg>

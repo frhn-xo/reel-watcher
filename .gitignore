@@ -36,6 +36,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# harvested / resolved data (generated out-of-band at runtime, not source)
+# - reels.json: scraped Instagram catalog
+# - resolved.json: signed CDN mp4 URLs that expire in hours
+/data/*
+!/data/.gitkeep
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -1,8 +1,13 @@
 @import "tailwindcss";
 
+/* Reel Watcher is a dark-only viewing app — see DESIGN.md §4. There is no light
+   theme; bright chrome fights the content. Surfaces/ink use Tailwind's neutral
+   scale directly (documented in DESIGN.md); only the two *meaningful* colors —
+   accent (playback) and seen (finished) — are tokenized here, so there is one
+   source of truth for them and they generate bg-/text-/ring- utilities. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0a; /* neutral-950 */
+  --foreground: #fafafa; /* neutral-50  */
 }
 
 @theme inline {
@@ -10,17 +15,27 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* The only two chromatic colors in the system. Each means exactly one thing. */
+  --color-accent: #dc2626; /* red-600   — playback: progress, scrubber, resume, focus */
+  --color-accent-hover: #ef4444; /* red-500 */
+  --color-seen: #34d399; /* emerald-400 — finished / seen */
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Respect users who ask for less motion — DESIGN.md §9. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

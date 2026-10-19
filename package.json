@@ -1,7 +1,19 @@
 {
-  "name": "reel-saver",
-  "version": "0.1.0",
+  "name": "reel-watcher",
+  "version": "1.0.0",
   "private": true,
+  "description": "A calm, self-hosted way to watch any Instagram channel's reels — the videos, without the feed.",
+  "license": "MIT",
+  "author": "frhn-xo",
+  "keywords": [
+    "instagram",
+    "reels",
+    "video-player",
+    "nextjs",
+    "self-hosted",
+    "chrome-devtools-protocol",
+    "distraction-free"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
