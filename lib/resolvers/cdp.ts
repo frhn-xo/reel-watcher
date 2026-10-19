@@ -30,7 +30,7 @@ class CDPSession {
   private nextId = 1;
   private pending = new Map<
     number,
-    { resolve: (v: any) => void; reject: (e: Error) => void }
+    { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
   private sessionId?: string;
 
@@ -63,12 +63,15 @@ class CDPSession {
     }
   }
 
-  private call(method: string, params: Record<string, unknown> = {}): Promise<any> {
+  private call<T = unknown>(
+    method: string,
+    params: Record<string, unknown> = {}
+  ): Promise<T> {
     const id = this.nextId++;
     const payload: Record<string, unknown> = { id, method, params };
     if (this.sessionId) payload.sessionId = this.sessionId;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+    return new Promise<T>((resolve, reject) => {
+      this.pending.set(id, { resolve: (v) => resolve(v as T), reject });
       this.ws.send(JSON.stringify(payload));
     });
   }
@@ -78,14 +81,14 @@ class CDPSession {
     // `background: true` keeps the harvest invisible: the tab loads, scrolls, and
     // scrapes without the browser stealing OS focus (no tab switch, no window raise),
     // so the user stays in whatever app they were in. Chromium-only CDP flag.
-    const { targetId } = await this.call("Target.createTarget", {
-      url,
-      background: true,
-    });
-    const { sessionId } = await this.call("Target.attachToTarget", {
-      targetId,
-      flatten: true,
-    });
+    const { targetId } = await this.call<{ targetId: string }>(
+      "Target.createTarget",
+      { url, background: true }
+    );
+    const { sessionId } = await this.call<{ sessionId: string }>(
+      "Target.attachToTarget",
+      { targetId, flatten: true }
+    );
     this.sessionId = sessionId;
     await this.call("Page.enable");
     await this.call("Runtime.enable");
@@ -103,7 +106,13 @@ class CDPSession {
 
   /** Evaluate an expression in the attached tab and return its value. */
   async evaluate<T>(expression: string, awaitPromise = false): Promise<T> {
-    const res = await this.call("Runtime.evaluate", {
+    const res = await this.call<{
+      result: { value: T };
+      exceptionDetails?: {
+        text?: string;
+        exception?: { description?: string };
+      };
+    }>("Runtime.evaluate", {
       expression,
       returnByValue: true,
       awaitPromise,

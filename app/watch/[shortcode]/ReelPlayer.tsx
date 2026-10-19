@@ -502,7 +502,6 @@ export default function ReelPlayer({
       onMouseLeave={() => playing && setShowControls(false)}
       style={{ cursor: controlsVisible ? "default" : "none", opacity: entered ? 1 : 0 }}
     >
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <video
         ref={videoRef}
         src={`/api/stream/${item.shortcode}`}
