@@ -9,6 +9,12 @@ import {
   getEntry,
   getRotation,
   saveRotation,
+  getZoom,
+  saveZoom,
+  clampZoom,
+  ZOOM_MIN,
+  ZOOM_MAX,
+  ZOOM_STEP,
   statusOf,
   useWatchHistory,
   type Rotation,
@@ -43,7 +49,7 @@ export default function ReelPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rotateAnimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transformAnimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSaved = useRef(0); // throttle timeupdate writes (seconds)
   const resumedFor = useRef<string>(""); // shortcode we've already auto-resumed, so we do it once
   const currentCodeRef = useRef(startShortcode); // mirror of currentCode for async guards
@@ -64,12 +70,14 @@ export default function ReelPlayer({
   const [entered, setEntered] = useState(false); // drives the fade-in on open
   const [speedMenu, setSpeedMenu] = useState(false); // YouTube-style speed popup
   const speedRef = useRef<HTMLDivElement>(null);
+  const [displayMenu, setDisplayMenu] = useState(false); // rotate + zoom popup
+  const displayRef = useRef<HTMLDivElement>(null);
   const [frameSize, setFrameSize] = useState({ w: 0, h: 0 }); // container box, for fit math
   const [natural, setNatural] = useState({ w: 0, h: 0 }); // intrinsic video dimensions
-  // Animate the transform ONLY for an explicit user rotate. Restoring a saved
-  // angle on load / reel-change must snap — otherwise the video visibly "twists"
-  // from 0° to the saved angle on every refresh.
-  const [animateRotate, setAnimateRotate] = useState(false);
+  // Animate the transform ONLY for an explicit user rotate/zoom. Restoring a saved
+  // angle or zoom on load / reel-change must snap — otherwise the video visibly
+  // "twists" or "jumps" from the default to the saved value on every refresh.
+  const [animateTransform, setAnimateTransform] = useState(false);
 
   // Rotation is NOT mirrored into local state — it lives in watch history (one
   // source of truth, persisted per reel). useWatchHistory re-renders on every
@@ -111,6 +119,7 @@ export default function ReelPlayer({
   const hasPrev = pos > 0;
   const hasNext = pos >= 0 && pos < effective.length - 1;
   const rotation = (history[item.shortcode]?.rotation ?? 0) as Rotation;
+  const zoom = history[item.shortcode]?.zoom ?? 1;
 
   // Write the current reel's position to local history (screen-agnostic resume).
   const persistCurrent = useCallback(() => {
@@ -185,16 +194,19 @@ export default function ReelPlayer({
     return () => cancelAnimationFrame(id);
   }, []);
 
-  // Close the speed popup on outside click or Escape.
+  // Close the speed / display popups on outside click or Escape.
   useEffect(() => {
-    if (!speedMenu) return;
+    if (!speedMenu && !displayMenu) return;
     const onDown = (e: MouseEvent) => {
-      if (speedRef.current && !speedRef.current.contains(e.target as Node)) {
-        setSpeedMenu(false);
-      }
+      const t = e.target as Node;
+      if (speedRef.current && !speedRef.current.contains(t)) setSpeedMenu(false);
+      if (displayRef.current && !displayRef.current.contains(t)) setDisplayMenu(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSpeedMenu(false);
+      if (e.key === "Escape") {
+        setSpeedMenu(false);
+        setDisplayMenu(false);
+      }
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -202,7 +214,7 @@ export default function ReelPlayer({
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [speedMenu]);
+  }, [speedMenu, displayMenu]);
 
   // Track the player box so we can scale a 90°/270° rotation to fit (a rotated
   // portrait video is wider than the frame unless we shrink it to match).
@@ -230,7 +242,7 @@ export default function ReelPlayer({
     return () => {
       if (hideTimer.current) clearTimeout(hideTimer.current);
       if (flashTimer.current) clearTimeout(flashTimer.current);
-      if (rotateAnimTimer.current) clearTimeout(rotateAnimTimer.current);
+      if (transformAnimTimer.current) clearTimeout(transformAnimTimer.current);
     };
   }, []);
 
@@ -258,6 +270,15 @@ export default function ReelPlayer({
       () => setFlash((f) => (f === msg ? null : f)),
       600
     );
+  }, []);
+
+  // Turn the transform transition ON for one explicit user rotate/zoom, then OFF
+  // again — so the change eases, but later restores (refresh / reel-change) snap
+  // instead of visibly twisting or jumping from the default to the saved value.
+  const flashTransformAnim = useCallback(() => {
+    setAnimateTransform(true);
+    if (transformAnimTimer.current) clearTimeout(transformAnimTimer.current);
+    transformAnimTimer.current = setTimeout(() => setAnimateTransform(false), 250);
   }, []);
 
   const togglePlay = useCallback(() => {
@@ -331,14 +352,31 @@ export default function ReelPlayer({
     // Read the persisted angle (not the render snapshot) so rapid clicks still
     // accumulate correctly; the write fires the history event → re-render.
     const next = (((getRotation(item.shortcode) + 90) % 360) as Rotation);
-    // This change IS a user action → animate it, then disable the transition once
-    // it finishes so later restores (refresh / reel-change) snap instead of twist.
-    setAnimateRotate(true);
-    if (rotateAnimTimer.current) clearTimeout(rotateAnimTimer.current);
-    rotateAnimTimer.current = setTimeout(() => setAnimateRotate(false), 250);
+    flashTransformAnim();
     saveRotation(item.shortcode, next);
     flashHint(`${next}°`);
-  }, [item.shortcode, flashHint]);
+  }, [item.shortcode, flashHint, flashTransformAnim]);
+
+  // Step the display zoom for THIS reel (1 = fit-to-frame). Persisted per reel like
+  // rotation — a reel's source resolution varies, so the preferred size does too.
+  // Read the persisted value (not the render snapshot) so rapid clicks accumulate.
+  const zoomBy = useCallback(
+    (dir: number) => {
+      const next = clampZoom(getZoom(item.shortcode) + dir * ZOOM_STEP);
+      flashTransformAnim();
+      saveZoom(item.shortcode, next);
+      flashHint(`${Math.round(next * 100)}%`);
+    },
+    [item.shortcode, flashHint, flashTransformAnim]
+  );
+
+  // Restore this reel to the default display (no rotation, fit-to-frame).
+  const resetDisplay = useCallback(() => {
+    flashTransformAnim();
+    saveRotation(item.shortcode, 0);
+    saveZoom(item.shortcode, 1);
+    flashHint("Reset");
+  }, [item.shortcode, flashHint, flashTransformAnim]);
 
   const toggleFullscreen = useCallback(() => {
     const c = containerRef.current;
@@ -419,6 +457,8 @@ export default function ReelPlayer({
       else if (k === "f") toggleFullscreen();
       else if (k === "m") toggleMute();
       else if (k === "r") rotate();
+      else if (k === "+" || k === "=") zoomBy(1);
+      else if (k === "-" || k === "_") zoomBy(-1);
       else if (k === "ArrowLeft") {
         e.preventDefault();
         skip(-5);
@@ -455,6 +495,7 @@ export default function ReelPlayer({
     toggleFullscreen,
     toggleMute,
     rotate,
+    zoomBy,
     skip,
     changeVolume,
     seekToFraction,
@@ -477,27 +518,26 @@ export default function ReelPlayer({
   const pct = duration ? (current / duration) * 100 : 0;
   const bufPct = duration ? (buffered / duration) * 100 : 0;
 
-  // Build the <video> transform. For 90°/270° the video's rendered box is turned
-  // on its side, so we also scale it down to fit the frame — otherwise a rotated
-  // portrait reel spills past the edges. 0°/180° need no scaling.
-  let videoTransform = "none";
-  if (rotation !== 0) {
-    let scale = 1;
-    const { w: fw, h: fh } = frameSize;
-    const { w: nw, h: nh } = natural;
-    if ((rotation === 90 || rotation === 270) && fw && fh && nw && nh) {
-      const fit = Math.min(fw / nw, fh / nh); // how the video sits at 0°
-      const rw = nw * fit;
-      const rh = nh * fit;
-      scale = Math.min(fw / rh, fh / rw); // shrink the sideways box to fit
-    }
-    videoTransform = `rotate(${rotation}deg) scale(${scale})`;
+  // Build the <video> transform from rotation + zoom. The base render is
+  // fit-to-frame (object-contain), so `fitScale` is 1 at 0°/180°; for 90°/270° the
+  // video's box is turned on its side, so we scale it to fit the frame first —
+  // otherwise a rotated portrait reel spills past the edges. The per-reel zoom then
+  // multiplies that fit (zoom 1 = exactly fit, >1 enlarges/crops, <1 shrinks).
+  let fitScale = 1;
+  const { w: fw, h: fh } = frameSize;
+  const { w: nw, h: nh } = natural;
+  if ((rotation === 90 || rotation === 270) && fw && fh && nw && nh) {
+    const fit = Math.min(fw / nw, fh / nh); // how the video sits at 0°
+    const rw = nw * fit;
+    const rh = nh * fit;
+    fitScale = Math.min(fw / rh, fh / rw); // shrink the sideways box to fit
   }
+  const videoTransform = `rotate(${rotation}deg) scale(${fitScale * zoom})`;
 
   return (
     <div
       ref={containerRef}
-      className="relative flex h-screen w-full select-none items-center justify-center bg-black transition-opacity duration-300"
+      className="relative flex h-screen w-full select-none items-center justify-center overflow-hidden bg-black transition-opacity duration-300"
       onMouseMove={nudgeControls}
       onMouseLeave={() => playing && setShowControls(false)}
       style={{ cursor: controlsVisible ? "default" : "none", opacity: entered ? 1 : 0 }}
@@ -508,8 +548,8 @@ export default function ReelPlayer({
         poster={`/api/thumb/${item.shortcode}`}
         autoPlay
         playsInline
-        className={`max-h-screen w-auto max-w-full ${
-          animateRotate ? "transition-transform duration-200" : ""
+        className={`h-full w-full object-contain ${
+          animateTransform ? "transition-transform duration-200" : ""
         }`}
         style={{ transform: videoTransform }}
         onClick={togglePlay}
@@ -738,10 +778,6 @@ export default function ReelPlayer({
             )}
           </Ctrl>
 
-          <Ctrl label="Rotate 90° (r)" onClick={rotate}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M15.55 5.55 11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11a7.9 7.9 0 0 0-1.62-3.89l-1.42 1.42c.54.75.88 1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.18 2.74-.72 3.9-1.62l-1.44-1.44c-.75.54-1.59.89-2.46 1.04zm3.89-2.42 1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z" /></svg>
-          </Ctrl>
-
           <span className="ml-1 text-xs tabular-nums text-neutral-200">
             {fmt(current)} / {fmt(duration)}
           </span>
@@ -753,7 +789,10 @@ export default function ReelPlayer({
                 title="Playback speed (< / >)"
                 aria-haspopup="menu"
                 aria-expanded={speedMenu}
-                onClick={() => setSpeedMenu((s) => !s)}
+                onClick={() => {
+                  setSpeedMenu((s) => !s);
+                  setDisplayMenu(false);
+                }}
                 className="rounded-full px-2 py-1 text-xs font-semibold tabular-nums text-neutral-200 transition hover:bg-white/15 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 {rate}×
@@ -787,6 +826,88 @@ export default function ReelPlayer({
                 </div>
               )}
             </div>
+
+            {/* Display popover — groups the per-reel rotate & zoom so the bar stays
+                uncluttered. Keyboard still drives both directly (r, + / -). */}
+            <div ref={displayRef} className="relative">
+              <button
+                aria-label="Display: rotate & zoom"
+                title="Display: rotate & zoom"
+                aria-haspopup="menu"
+                aria-expanded={displayMenu}
+                onClick={() => {
+                  setDisplayMenu((s) => !s);
+                  setSpeedMenu(false);
+                }}
+                className="grid h-9 w-9 place-items-center rounded-full text-white/90 transition hover:bg-white/15 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" /></svg>
+              </button>
+              {displayMenu && (
+                <div
+                  role="menu"
+                  className="absolute bottom-full right-0 mb-2 min-w-[12rem] overflow-hidden rounded-lg bg-neutral-900/95 py-1 text-sm text-white shadow-xl ring-1 ring-white/10 backdrop-blur"
+                >
+                  <div className="px-3 pb-1 pt-1 text-[0.65rem] font-semibold uppercase tracking-wide text-neutral-400">
+                    Display
+                  </div>
+
+                  {/* Size (zoom) stepper */}
+                  <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                    <span className="text-neutral-300">Size</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        aria-label="Zoom out (-)"
+                        title="Zoom out (-)"
+                        onClick={() => zoomBy(-1)}
+                        disabled={zoom <= ZOOM_MIN}
+                        className="grid h-9 w-9 place-items-center rounded-full text-white/90 transition hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-30 disabled:hover:bg-transparent"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14z" /></svg>
+                      </button>
+                      <span className="w-10 text-center tabular-nums text-neutral-200">
+                        {Math.round(zoom * 100)}%
+                      </span>
+                      <button
+                        aria-label="Zoom in (+)"
+                        title="Zoom in (+)"
+                        onClick={() => zoomBy(1)}
+                        disabled={zoom >= ZOOM_MAX}
+                        className="grid h-9 w-9 place-items-center rounded-full text-white/90 transition hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-30 disabled:hover:bg-transparent"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" /></svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Rotate — click to turn 90° clockwise, shows current angle */}
+                  <button
+                    role="menuitem"
+                    onClick={rotate}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left transition hover:bg-white/10"
+                  >
+                    <span className="text-neutral-300">Rotate</span>
+                    <span className="flex items-center gap-1.5 tabular-nums text-neutral-200">
+                      {rotation}°
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M15.55 5.55 11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11a7.9 7.9 0 0 0-1.62-3.89l-1.42 1.42c.54.75.88 1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.18 2.74-.72 3.9-1.62l-1.44-1.44c-.75.54-1.59.89-2.46 1.04zm3.89-2.42 1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z" /></svg>
+                    </span>
+                  </button>
+
+                  {/* Reset to the default (fit-to-frame, unrotated) */}
+                  <div className="mt-1 border-t border-white/10 pt-1">
+                    <button
+                      role="menuitem"
+                      onClick={resetDisplay}
+                      disabled={rotation === 0 && zoom === 1}
+                      className="w-full px-3 py-1.5 text-left text-neutral-300 transition hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <Ctrl
               label={fullscreen ? "Exit fullscreen (f)" : "Fullscreen (f)"}
               onClick={toggleFullscreen}

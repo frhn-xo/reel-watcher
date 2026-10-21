@@ -29,12 +29,28 @@ export interface WatchEntry {
   duration: number; // total seconds (as reported by the <video>)
   completed: boolean; // watched to the end at least once
   rotation?: number; // manual display rotation in degrees (0 | 90 | 180 | 270)
+  zoom?: number; // manual display zoom factor (1 = fit-to-frame; see ZOOM_MIN/MAX)
   updatedAt: number; // epoch ms — drives "most recently watched" ordering
 }
 
 /** Clockwise rotations a reel can be displayed at. Some IG sources carry broken
  *  orientation metadata, so we let the viewer correct it and remember the choice. */
 export type Rotation = 0 | 90 | 180 | 270;
+
+/** Bounds and step for the per-reel display zoom. 1 = fit-to-frame (the default);
+ *  below shrinks, above enlarges (and may crop). A reel's source resolution varies
+ *  wildly, so this is remembered per reel like rotation. */
+export const ZOOM_MIN = 0.5;
+export const ZOOM_MAX = 3;
+export const ZOOM_STEP = 0.1;
+
+/** Clamp a zoom into range and onto a clean step — keeps repeated +/- clicks from
+ *  accumulating floating-point drift (1.0000000002) in the stored value. */
+export function clampZoom(zoom: number): number {
+  if (!Number.isFinite(zoom)) return 1;
+  const stepped = Math.round(zoom / ZOOM_STEP) * ZOOM_STEP;
+  return Number(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, stepped)).toFixed(2));
+}
 
 export type WatchStatus = "fresh" | "in-progress" | "watched";
 
@@ -66,6 +82,7 @@ const DEFAULT_ENTRY: WatchEntry = {
   duration: 0,
   completed: false,
   rotation: 0,
+  zoom: 1,
   updatedAt: 0,
 };
 
@@ -125,6 +142,17 @@ export function saveRotation(shortcode: string, rotation: Rotation): void {
   updateEntry(shortcode, { rotation }, { touch: false });
 }
 
+/** Read the remembered display zoom for a reel (defaults to 1 = fit-to-frame). */
+export function getZoom(shortcode: string): number {
+  return getEntry(shortcode)?.zoom ?? 1;
+}
+
+/** Remember the manual display zoom for a reel. Like rotation it isn't "watching",
+ *  so it leaves updatedAt untouched and won't reorder the Continue-watching row. */
+export function saveZoom(shortcode: string, zoom: number): void {
+  updateEntry(shortcode, { zoom: clampZoom(zoom) }, { touch: false });
+}
+
 export function statusOf(entry: WatchEntry | null | undefined): WatchStatus {
   if (!entry) return "fresh";
   if (entry.completed) return "watched";
@@ -169,12 +197,14 @@ export function importWatchHistory(raw: unknown): void {
     const duration = Number(v.duration);
     const updatedAt = Number(v.updatedAt);
     const rotation = Number(v.rotation);
+    const zoom = Number(v.zoom);
     next[shortcode] = {
       position: Number.isFinite(position) && position >= 0 ? position : 0,
       duration: Number.isFinite(duration) && duration >= 0 ? duration : 0,
       completed: v.completed === true,
       rotation:
         rotation === 90 || rotation === 180 || rotation === 270 ? rotation : 0,
+      zoom: Number.isFinite(zoom) && zoom > 0 ? clampZoom(zoom) : 1,
       updatedAt: Number.isFinite(updatedAt) ? updatedAt : 0,
     };
   }
